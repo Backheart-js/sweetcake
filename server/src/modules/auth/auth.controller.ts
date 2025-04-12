@@ -1,5 +1,4 @@
 import {
-  Body,
   Controller,
   Get,
   HttpCode,
@@ -8,18 +7,27 @@ import {
   Request,
   UseGuards,
 } from '@nestjs/common';
-import { AuthResult, AuthService } from './auth.service';
-import { LoginDto } from './dto/login.dto';
+import { AuthService } from './auth.service';
 import { AuthGuard } from 'src/shared/guards/auth.guards';
+import { LocalAuthGuard } from 'src/shared/guards/passport-local.guards';
 
 @Controller('auth')
 export class AuthController {
   constructor(private readonly authService: AuthService) {}
 
+  @UseGuards(LocalAuthGuard)
   @HttpCode(HttpStatus.OK)
   @Post('login')
-  async login(@Body() loginDto: LoginDto): Promise<AuthResult> {
-    return this.authService.authenticate(loginDto.email, loginDto.password);
+  login(@Request() req: { user: { email: string; password: string } }) {
+    console.log('req:', req.user);
+    return req.user;
+  }
+
+  @UseGuards(LocalAuthGuard)
+  @Post('logout')
+  logout(@Request() req: { logout: () => void }) {
+    req.logout();
+    return { message: 'Logged out successfully' };
   }
 
   @UseGuards(AuthGuard)
