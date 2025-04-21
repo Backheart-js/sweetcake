@@ -5,12 +5,15 @@ import {
   HttpStatus,
   Post,
   Request,
+  Res,
   UseGuards,
 } from '@nestjs/common';
-import { AuthService } from './auth.service';
+import { AuthResult, AuthService } from './auth.service';
 // import { AuthGuard } from 'src/shared/guards/auth.guards';
 import { LocalAuthGuard } from 'src/shared/guards/passport-local.guards';
 import { JwtAuthGuard } from 'src/shared/guards/passport-jwt.guards';
+import { Response } from 'express';
+import { RefreshJwtAuthGuard } from 'src/shared/guards/passport-refresh-jwt.guards';
 
 @Controller('auth')
 export class AuthController {
@@ -19,8 +22,50 @@ export class AuthController {
   @UseGuards(LocalAuthGuard)
   @HttpCode(HttpStatus.OK)
   @Post('login')
-  login(@Request() req: { user: { email: string; password: string } }) {
-    return req.user;
+  login(
+    @Request() req: { user: AuthResult },
+    @Res({ passthrough: true }) response: Response,
+  ) {
+    response.cookie('refresh_token', req.user.refreshToken, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'strict',
+      maxAge: 7 * 24 * 60 * 60 * 1000,
+    });
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const { refreshToken, ...data } = req.user;
+    return data;
+  }
+
+  @Post('refresh')
+  @UseGuards(RefreshJwtAuthGuard)
+  async refresh(
+    @Request() req: { user: { userId: string; email: string } },
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const token = req.cookies['refresh_token'];
+    if (!token) throw new UnauthorizedException();
+
+    try {
+      const payload = await this.authService.validateRefreshToken(
+        req.user.userId,
+        token,
+      );
+      const user = await this.authService.getUserById(payload.sub);
+      const tokens = await this.authService.generateTokens(user);
+
+      res.cookie('refresh_token', tokens.refreshToken, {
+        httpOnly: true,
+        secure: true,
+        sameSite: 'lax',
+        path: '/auth/refresh',
+        maxAge: 7 * 24 * 60 * 60 * 1000,
+      });
+
+      return { accessToken: tokens.accessToken };
+    } catch (e) {
+      throw new UnauthorizedException();
+    }
   }
 
   @Post('logout')
@@ -31,9 +76,7 @@ export class AuthController {
 
   @UseGuards(JwtAuthGuard)
   @Get('me')
-  getProfile(
-    @Request() req: { user: { id: string; name: string; email: string } },
-  ) {
+  getProfile(@Request() req: { user: { userId: string; email: string } }) {
     return req.user;
   }
 }
