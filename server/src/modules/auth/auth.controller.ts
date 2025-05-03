@@ -6,6 +6,7 @@ import {
   Post,
   Request,
   Res,
+  UnauthorizedException,
   UseGuards,
 } from '@nestjs/common';
 import { AuthResult, AuthService } from './auth.service';
@@ -40,10 +41,14 @@ export class AuthController {
   @Post('refresh')
   @UseGuards(RefreshJwtAuthGuard)
   async refresh(
-    @Request() req: { user: { userId: string; email: string } },
+    @Request()
+    req: Request & {
+      user: { userId: string; email: string };
+      cookies: { [key: string]: string };
+    },
     @Res({ passthrough: true }) res: Response,
   ) {
-    const token = req.cookies['refresh_token'];
+    const token = req.cookies?.['refresh_token'];
     if (!token) throw new UnauthorizedException();
 
     try {
@@ -51,7 +56,11 @@ export class AuthController {
         req.user.userId,
         token,
       );
-      const user = await this.authService.getUserById(payload.sub);
+
+      if (!payload) throw new UnauthorizedException();
+      const user = await this.authService.validateUserById(req.user.userId);
+
+      if (!user) throw new UnauthorizedException('User not found');
       const tokens = await this.authService.generateTokens(user);
 
       res.cookie('refresh_token', tokens.refreshToken, {
@@ -63,7 +72,7 @@ export class AuthController {
       });
 
       return { accessToken: tokens.accessToken };
-    } catch (e) {
+    } catch {
       throw new UnauthorizedException();
     }
   }

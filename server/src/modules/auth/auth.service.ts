@@ -39,6 +39,19 @@ export class AuthService {
     return null;
   }
 
+  async validateUserById(userId: string): Promise<UserResult | null> {
+    const user = await this.userService.findById(userId);
+    if (user) {
+      return {
+        userId: user._id.toString(),
+        userName: user.name,
+        email: user.email,
+      };
+    }
+
+    return null;
+  }
+
   async generateTokens(user: UserResult) {
     const tokenPayload = { email: user.email, sub: user.userId };
 
